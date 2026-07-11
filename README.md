@@ -1,4 +1,4 @@
-# miningpop 🌸 (Anki-Mining Fork of meikipop)
+# minepop 🌸 (Anki-Mining Fork of meikipop)
 
 This is a customized personal fork of [meikipop](https://github.com/rtr46/meikipop). All credit for the core OCR engine, positioning, and dictionary loading logic goes entirely to the original creator, **`rtr46`**! 
 
