@@ -492,7 +492,7 @@ class SettingsDialog(QDialog):
             self._mark_as_custom()
 
     def _import_yomitan_settings(self):
-        """Loads Yomitan exported settings JSON, parses it, and auto-fills fields with placeholder translation."""
+        """Loads Yomitan exported settings JSON, parses it, and auto-fills fields with robust profile support."""
         import json
 
         file_path, _ = QFileDialog.getOpenFileName(
@@ -508,8 +508,54 @@ class SettingsDialog(QDialog):
             with open(file_path, 'r', encoding='utf-8') as f:
                 backup_data = json.load(f)
 
-            # Yomitan nests settings under an 'options' root key
-            options = backup_data.get('options', backup_data)
+            options = None
+            profile_name_used = "Default"
+
+            if isinstance(backup_data, dict):
+                # Yomitan saves option structures inside a 'profiles' list or dict
+                if "profiles" in backup_data:
+                    profiles = backup_data["profiles"]
+                    active_profile_id = backup_data.get("activeProfile", "")
+
+                    if isinstance(profiles, list):
+                        # Match the active profile in the array
+                        for p in profiles:
+                            if isinstance(p, dict) and (p.get("name") == active_profile_id or p.get("id") == active_profile_id):
+                                options = p.get("options")
+                                profile_name_used = p.get("name", "Active Profile")
+                                break
+                        # Fallback to first profile if active one not found
+                        if not options and len(profiles) > 0:
+                            options = profiles[0].get("options")
+                            profile_name_used = profiles[0].get("name", "First Profile")
+
+                    elif isinstance(profiles, dict):
+                        p = profiles.get(active_profile_id)
+                        if isinstance(p, dict):
+                            options = p.get("options")
+                            profile_name_used = p.get("name", active_profile_id)
+                        else:
+                            for pid, p_val in profiles.items():
+                                if isinstance(p_val, dict) and "options" in p_val:
+                                    options = p_val.get("options")
+                                    profile_name_used = p_val.get("name", pid)
+                                    break
+                                elif isinstance(p_val, dict):
+                                    options = p_val
+                                    profile_name_used = pid
+                                    break
+
+                # If no profiles wrapper is present, fallback to 'options' key or the root
+                if not options:
+                    options = backup_data.get("options", backup_data)
+                    profile_name_used = "Root Settings"
+            else:
+                raise ValueError("Parsed JSON root is not a dictionary.")
+
+            if not isinstance(options, dict):
+                raise ValueError("Could not extract a valid 'options' dictionary from backup.")
+
+            # Traverse down the parsed options structure
             anki_opt = options.get('anki', {})
             terms_opt = anki_opt.get('terms', {})
 
@@ -543,20 +589,19 @@ class SettingsDialog(QDialog):
             def translate_val(val):
                 if not isinstance(val, str):
                     return val
-                
-                # Check exact matches
+
                 if val in translation_map:
                     return translation_map[val]
-                
+
                 # Cloze sentence parsing
                 if "{cloze-prefix}" in val:
                     return "{sentence_cloze}"
-                
+
                 # Glossary/Definition parsing
                 val_lower = val.lower()
                 if "glossary" in val_lower or "definition" in val_lower:
                     return "{glossary_full}"
-                
+
                 return val
 
             mapping_dict = {}
@@ -589,7 +634,7 @@ class SettingsDialog(QDialog):
             QMessageBox.information(
                 self,
                 "Import Complete",
-                "Yomitan configuration imported successfully!\nUnsupported placeholders were safely translated."
+                f"Successfully parsed Yomitan settings!\nLoaded active profile: '{profile_name_used}'."
             )
         except Exception as e:
             QMessageBox.critical(
@@ -617,7 +662,7 @@ class SettingsDialog(QDialog):
             config.magpie_compatibility = self.magpie_check.isChecked()
         config.compact_mode = self.compact_check.isChecked()
         config.show_all_glosses = self.show_glosses_check.isChecked()
-        config.show_deconjugation = self.show_deconj_check.isChecked()
+        config.show_deconj_check = self.show_deconj_check.isChecked() if hasattr(self, 'show_deconj_check') else config.show_deconjugation
         config.show_pos = self.show_pos_check.isChecked()
         config.show_tags = self.show_tags_check.isChecked()
         config.show_frequency = self.show_frequency_check.isChecked()
