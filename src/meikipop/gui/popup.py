@@ -137,6 +137,7 @@ class Popup(QWidget):
             QPushButton.mineButton:disabled {{
                 border: 1px solid #888;
                 color: #888;
+                background-color: transparent;
             }}
         """)
 
@@ -399,13 +400,9 @@ class Popup(QWidget):
         if config.compact_mode:
             separator = "; "
             full_def_text_html = separator.join(def_text_parts_html)
-            def_ratio = len(separator.join(def_text_parts_calc)) / self.def_chars_per_line
-            ratio = max(ratio, def_ratio)
         else:
             separator = "<br>"
             full_def_text_html = separator.join(def_text_parts_html)
-            for def_text_calc in def_text_parts_calc:
-                ratio = max(ratio, len(def_text_calc) / self.def_chars_per_line)
 
         body_html = f'<span style="font-size:{config.font_size_definitions}px;">{full_def_text_html}</span>'
 
@@ -496,9 +493,31 @@ class Popup(QWidget):
             self.mine_finished.emit(button, "err", "Set a deck, note type and field mapping in Settings → Anki first")
             return
 
-        glosses = [s['glosses'][0] for s in entry.senses if s.get('glosses')]
-        glossary = glosses[0] if glosses else ""
-        glossary_full = "; ".join(glosses)
+        # --- DYNAMIC RICH NESTED LIST GENERATION ---
+        html_senses = []
+        for sense in entry.senses:
+            pos = sense.get('pos', [])
+            glosses = sense.get('glosses', [])
+            if not glosses:
+                continue
+            
+            # Format parts of speech nicely in italics
+            pos_str = f"<i>({', '.join(pos)})</i> " if pos else ""
+            
+            if len(glosses) == 1:
+                # Single meaning/synonym
+                html_senses.append(f"<li>{pos_str}{glosses[0]}</li>")
+            else:
+                # Multiple synonyms under this sense (rendered as circular sub-bullets)
+                bullets = "".join(f"<li>{g}</li>" for g in glosses)
+                html_senses.append(f"<li>{pos_str}<ul style='list-style-type: circle; margin-top: 2px; margin-bottom: 2px;'>{bullets}</ul></li>")
+        
+        # Combine into a structured, padded ordered list (1., 2., 3...)
+        beautiful_glossary = f"<ol style='margin-top: 2px; margin-bottom: 2px; padding-left: 20px;'>{''.join(html_senses)}</ol>"
+
+        # Map both the short and full glossary variables to our rich list structure
+        glossary = beautiful_glossary
+        glossary_full = beautiful_glossary
 
         surface_len = max(getattr(entry, "surface_length", 0), len(entry.written_form), 1)
         idx = entry.sentence_index
