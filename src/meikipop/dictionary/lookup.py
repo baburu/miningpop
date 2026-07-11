@@ -31,6 +31,9 @@ class DictionaryEntry:
     freq: int
     deconjugation_process: tuple
     priority: float = 0.0
+    sentence: str = ""       # full OCR'd sentence/line this entry was hit-scanned from
+    sentence_index: int = 0  # index of the matched word within `sentence`
+    surface_length: int = 0  # length of the actually-seen (possibly conjugated) surface form
 
 
 @dataclass
@@ -68,18 +71,22 @@ class Lookup(threading.Thread):
                 if not self.shared_state.running: break
                 logger.debug("Lookup: Triggered")
 
-                # skip lookup if hit_result didnt change
-                if hit_result == self.last_hit_result:
+                # skip lookup if the underlying word didn't change (ignore minor sentence jitter)
+                new_str = hit_result.lookup_string if hit_result else None
+                old_str = self.last_hit_result.lookup_string if self.last_hit_result else None
+                if new_str == old_str:
+                    self.last_hit_result = hit_result  # still refresh sentence context
                     continue
                 self.last_hit_result = hit_result
 
-                lookup_result = self.lookup(self.last_hit_result) if self.last_hit_result else None
+                lookup_result = self.lookup(hit_result) if hit_result else None
                 self.popup_window.set_latest_data(lookup_result)
             except:
                 logger.exception("An unexpected error occurred in the lookup loop. Continuing...")
         logger.debug("Lookup thread stopped.")
 
-    def lookup(self, lookup_string: str) -> List:
+    def lookup(self, hit_result) -> List:
+        lookup_string = hit_result.lookup_string if hit_result else None
         if not lookup_string:
             return []
         logger.info(f"Looking up: {lookup_string}")  # keep at info level so people know whats up
@@ -95,25 +102,33 @@ class Lookup(threading.Thread):
 
         if text in self.lookup_cache:
             self.lookup_cache.move_to_end(text)
-            return self.lookup_cache[text]
+            results = self.lookup_cache[text]
+        else:
+            results = self._do_lookup(text)
 
-        results = self._do_lookup(text)
+            # Append kanji entry for the first character if applicable
+            if config.show_kanji and KANJI_REGEX.match(text[0]):
+                kd = self.dictionary.kanji_entries.get(text[0])
+                if kd:
+                    results.append(KanjiEntry(
+                        character=kd['character'],
+                        meanings=kd['meanings'],
+                        readings=kd['readings'],
+                        components=kd.get('components', []),
+                        examples=kd.get('examples', []),
+                    ))
 
-        # Append kanji entry for the first character if applicable
-        if config.show_kanji and KANJI_REGEX.match(text[0]):
-            kd = self.dictionary.kanji_entries.get(text[0])
-            if kd:
-                results.append(KanjiEntry(
-                    character=kd['character'],
-                    meanings=kd['meanings'],
-                    readings=kd['readings'],
-                    components=kd.get('components', []),
-                    examples=kd.get('examples', []),
-                ))
+            self.lookup_cache[text] = results
+            if len(self.lookup_cache) > self.CACHE_SIZE:
+                self.lookup_cache.popitem(last=False)
 
-        self.lookup_cache[text] = results
-        if len(self.lookup_cache) > self.CACHE_SIZE:
-            self.lookup_cache.popitem(last=False)
+        # Attach fresh sentence context to entries every time, even on cache hits,
+        # since the cache key is the word text but the surrounding sentence can differ.
+        for r in results:
+            if isinstance(r, DictionaryEntry):
+                r.sentence = hit_result.sentence
+                r.sentence_index = hit_result.char_index
+
         return results
 
     def _do_lookup(self, text: str) -> List[DictionaryEntry]:
@@ -267,6 +282,7 @@ class Lookup(threading.Thread):
                 freq=d['freq'],
                 deconjugation_process=d['deconjugation_process'],
                 priority=d['priority'],
+                surface_length=d['match_len'],
             ))
         return results
 

@@ -1,12 +1,20 @@
 # meikipop/ocr/hit_scan.py
 import logging
 import threading
-from typing import List
+from dataclasses import dataclass
+from typing import List, Optional
 
 from meikipop.gui.magpie_manager import magpie_manager
 from meikipop.ocr.interface import Paragraph
 
 logger = logging.getLogger(__name__)  # Get the logger
+
+
+@dataclass
+class HitScanResult:
+    lookup_string: str  # what gets fed to Lookup (may be truncated downstream)
+    sentence: str        # full OCR'd paragraph/line the word was found in
+    char_index: int      # index of the hit character within `sentence`
 
 
 class HitScanner(threading.Thread):
@@ -109,15 +117,11 @@ class HitScanner(threading.Thread):
 
             character = full_text[final_char_index]
             lookup_string = full_text[final_char_index:]
-            hit_scan_result = (full_text, final_char_index, character,
-                               lookup_string)  # this may be interesting for debugging, but only lookup_string is really relevant
+            hit_scan_result = HitScanResult(
+                lookup_string=lookup_string,
+                sentence=full_text,
+                char_index=final_char_index,
+            )
             break
 
-        if hit_scan_result:
-            text, char_pos, char, lookup_string = hit_scan_result
-        #    truncated_text = (text[:40] + '...') if len(text) > 40 else text
-        #     config.user_log(f"  -> Looking up '{char}' at pos {char_pos} in text: \"{truncated_text}\"")
-        # else:
-        #     config.user_log("hit scan unsuccessful")
-
-        return lookup_string
+        return hit_scan_result

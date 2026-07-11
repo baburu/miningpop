@@ -40,6 +40,16 @@ class Config:
             'auto_scan_on_mouse_move': True,
             'magpie_compatibility': True
         },
+        'Anki': {
+            'anki_enabled': False,
+            'anki_connect_url': 'http://127.0.0.1:8765',
+            'anki_deck': '',
+            'anki_model': '',
+            # JSON-encoded dict: {"AnkiFieldName": "{marker}"} e.g. {"Expression": "{expression}", "Sentence": "{sentence}"}
+            'anki_field_mapping': '{}',
+            'anki_tag': 'meikipop',
+            'anki_check_duplicates': True,
+        },
         'Theme': {
             'theme_name': 'Nazeka',
             'font_family': '',
