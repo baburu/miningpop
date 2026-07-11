@@ -512,20 +512,30 @@ class SettingsDialog(QDialog):
             profile_name_used = "Default"
 
             if isinstance(backup_data, dict):
-                # Yomitan saves option structures inside a 'profiles' list or dict
-                if "profiles" in backup_data:
-                    profiles = backup_data["profiles"]
-                    active_profile_id = backup_data.get("activeProfile", "")
+                # Yomitan saves option structures inside a 'profiles' list or dict inside 'options'
+                opts_root = backup_data.get("options", backup_data)
+                
+                if "profiles" in opts_root:
+                    profiles = opts_root["profiles"]
+                    profile_idx = opts_root.get("profileCurrent", 0)
+                    active_profile_id = opts_root.get("activeProfile", "")
 
-                    if isinstance(profiles, list):
-                        # Match the active profile in the array
-                        for p in profiles:
-                            if isinstance(p, dict) and (p.get("name") == active_profile_id or p.get("id") == active_profile_id):
-                                options = p.get("options")
-                                profile_name_used = p.get("name", "Active Profile")
-                                break
-                        # Fallback to first profile if active one not found
-                        if not options and len(profiles) > 0:
+                    if isinstance(profiles, list) and len(profiles) > 0:
+                        # 1. First, try to index via profileCurrent integer
+                        if isinstance(profile_idx, int) and 0 <= profile_idx < len(profiles):
+                            options = profiles[profile_idx].get("options")
+                            profile_name_used = profiles[profile_idx].get("name", f"Profile {profile_idx}")
+                        
+                        # 2. Fallback to matching string ID/activeProfile
+                        if not options and active_profile_id:
+                            for p in profiles:
+                                if isinstance(p, dict) and (p.get("name") == active_profile_id or p.get("id") == active_profile_id):
+                                    options = p.get("options")
+                                    profile_name_used = p.get("name", "Active Profile")
+                                    break
+                        
+                        # 3. Fallback to first profile index
+                        if not options:
                             options = profiles[0].get("options")
                             profile_name_used = profiles[0].get("name", "First Profile")
 
@@ -557,17 +567,41 @@ class SettingsDialog(QDialog):
 
             # Traverse down the parsed options structure
             anki_opt = options.get('anki', {})
-            terms_opt = anki_opt.get('terms', {})
-
+            
             enabled = anki_opt.get('enable', True)
             server_url = anki_opt.get('server', 'http://127.0.0.1:8765')
-            deck_name = terms_opt.get('deck', '')
-            model_name = terms_opt.get('model', '')
-            tags_list = terms_opt.get('tags', [])
-            check_dupes = terms_opt.get('checkDuplicates', True)
+            tags_list = anki_opt.get('tags', [])
+            check_dupes = anki_opt.get('checkForDuplicates', True)
 
-            # Yomichan/Yomitan fields are stored as: [["FieldName", "{expression}"], ...]
-            raw_fields = terms_opt.get('fields', [])
+            # In modern Yomitan backups, card layout settings are structured in cardFormats array list
+            card_formats = anki_opt.get("cardFormats", [])
+            deck_name = ""
+            model_name = ""
+            raw_fields = []
+
+            # Locate the active "term" format block (Yomitan card template)
+            active_format = None
+            if isinstance(card_formats, list) and len(card_formats) > 0:
+                for fmt in card_formats:
+                    if isinstance(fmt, dict) and fmt.get("type") == "term":
+                        active_format = fmt
+                        break
+                if not active_format:
+                    active_format = card_formats[0]
+
+            if isinstance(active_format, dict):
+                deck_name = active_format.get("deck", "")
+                model_name = active_format.get("model", "")
+                fields_data = active_format.get("fields", {})
+
+                # Convert the modern dictionary format into a flat list/dict structure
+                # fields_data looks like: {"FieldName": {"value": "...", "overwriteMode": "..."}}
+                if isinstance(fields_data, dict):
+                    for field_key, field_obj in fields_data.items():
+                        if isinstance(field_obj, dict):
+                            raw_fields.append([field_key, field_obj.get("value", "")])
+                        else:
+                            raw_fields.append([field_key, str(field_obj)])
 
             # Translation map from Yomichan/Yomitan variables to meikipop-supported variables
             translation_map = {
