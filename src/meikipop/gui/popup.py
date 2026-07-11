@@ -140,6 +140,7 @@ class Popup(QWidget):
             QPushButton.mineButton:disabled {{
                 border: 1px solid #888;
                 color: #888;
+                background-color: transparent;
             }}
         """)
 
@@ -228,15 +229,19 @@ class Popup(QWidget):
             new_size = self._build_entries(latest_data)
             self.setFixedSize(new_size)
 
-            # === AUTO-COPY TO CLIPBOARD WITHOUT REPETITIONS ===
+            # === AUTO-COPY FULL SENTENCE TO CLIPBOARD WITHOUT REPETITIONS ===
             if len(latest_data) > 0:
                 first_entry = latest_data[0]
                 scanned_word = getattr(first_entry, 'written_form', '') or getattr(first_entry, 'character', '')
+                sentence_text = getattr(first_entry, 'sentence', '').strip()
                 
-                # Only copy if it is a new word (prevents spamming clipboard history)
-                if scanned_word and scanned_word != self._last_copied_word:
-                    QApplication.clipboard().setText(scanned_word)
-                    self._last_copied_word = scanned_word
+                # Use the full sentence if available; otherwise, fall back to the single word
+                target_text = sentence_text if sentence_text else scanned_word
+                
+                # Only copy if it is a new line (prevents spamming clipboard history)
+                if target_text and target_text != self._last_copied_word:
+                    QApplication.clipboard().setText(target_text)
+                    self._last_copied_word = target_text
 
         self._last_latest_data = latest_data
 
