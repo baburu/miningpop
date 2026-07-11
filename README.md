@@ -23,15 +23,59 @@ This is a customized personal fork of [meikipop](https://github.com/rtr46/meikip
 
 ---
 
+## 📸 Screenshots
+
+<p align="center">
+  <img src="images/screenshot-kanji-cedar.png" alt="Popup showing 杉 (cedar) with full dictionary entries and furigana" width="45%">
+  &nbsp;&nbsp;
+  <img src="images/screenshot-kanji-han.png" alt="Popup showing multiple readings of 漢 with numbered definitions" width="45%">
+</p>
+
+The screenshots above show the popup in action: multiple dictionary entries are merged into a single clean, numbered list, with furigana rendered in the `Kanji[Kana]` format so Anki can display it natively once mined.
+
+---
+
 ## 🚀 How to Run this Version
 
-Because this is a custom fork, running `pip install meikipop` or downloading prepackaged binaries from the official release page **will not work**, as they will install the unedited upstream code instead of these custom mining features [1]!
+Because this is a custom fork, running `pip install meikipop` or downloading prepackaged binaries from the official release page **will not work**, as they will install the unedited upstream code instead of these custom mining features!
 
 To run and use this fork locally, follow these steps:
 
-### Option A: Direct Local Path Execution (Easiest)
-No installation is required. Open your terminal/command prompt at the root of your `miningpop` folder and run [2]:
+### Option A: Install with pip (Recommended)
+
+From the root of the repo, install it in editable mode so it picks up your local code:
+
+```cmd
+pip install -e .
+```
+
+Once installed, launch it with either command (both are aliased to the same app):
+
+```cmd
+meikipop
+```
+or
+```cmd
+minepop
+```
+
+If you make further code changes, you don't need to reinstall — editable installs (`-e .`) pick up edits automatically. You only need to re-run `pip install -e .` if you change `pyproject.toml` itself (e.g. dependencies, entry points).
+
+### Option B: Direct Local Path Execution (No Install)
+
+No installation is required. Open your terminal/command prompt at the root of your repo folder and run:
 
 ```cmd
 set PYTHONPATH=src
 python src/meikipop/main.py
+```
+
+### First-Time Setup
+
+On first launch, the app will try to download a prebuilt dictionary. If that fails (e.g. `HTTP Error 404`), build the dictionary locally instead:
+
+```cmd
+meikipop build-dict
+```
+
+See the [Original meikipop Repository & README](https://github.com/rtr46/meikipop) for details on dictionary sources and formats.

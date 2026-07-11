@@ -4,12 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "meikipop"
-version = "2.0.4"
+version = "2.0.5"
 description = "Universal Japanese OCR popup dictionary"
 readme = "README.md"
 license = "GPL-3.0"
 authors = [
-    {name = "rtr46"}
+    {name = "rtr46"},
+    {name = "baburu"}
 ]
 requires-python = ">=3.10"
 dependencies = [
@@ -33,6 +34,7 @@ dependencies = [
 
 [project.scripts]
 meikipop = "meikipop.main:main"
+minepop = "meikipop.main:main"
 
 [project.entry-points."meikipop.scripts"]
 build-dict = "meikipop.scripts.build_dictionary:main"
