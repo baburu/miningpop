@@ -8,7 +8,7 @@ from PyQt6.QtCore import QTimer, QPoint, QSize, QEvent, pyqtSignal
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontMetrics, QFontInfo
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QApplication, QPushButton, QSizePolicy
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QApplication, QPushButton, QSizePolicy, QScrollArea
 )
 
 from meikipop.anki.ankiconnect import AnkiConnectClient, AnkiConnectError, MineableWord, render_field_mapping
@@ -76,19 +76,39 @@ class Popup(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet("background: transparent;")
 
+        # Base layout
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
+        # Outer styled Frame
         self.frame = QFrame()
         self._apply_frame_stylesheet()
-        main_layout.addWidget(self.frame)
-        # Track mouse enter/leave on the frame to implement "pin while hovered".
-        self.frame.installEventFilter(self)
+        
+        # --- FIXED SIZE & SCROLLBAR WORKFLOW ---
+        self.setFixedSize(420, 320)  # Lock popup to a comfortable fixed size
 
-        self.content_layout = QVBoxLayout(self.frame)
+        # Vertical Scroll Area Setup
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.scroll_area.setStyleSheet("background: transparent; border: none;")
+
+        # Inner Scroll Content Widget
+        self.scroll_content = QWidget()
+        self.scroll_content.setStyleSheet("background: transparent; border: none;")
+        self.content_layout = QVBoxLayout(self.scroll_content)
         self.content_layout.setContentsMargins(10, 10, 10, 10)
-        self.content_layout.setSpacing(4)
+        self.content_layout.setSpacing(6)
 
+        self.scroll_area.setWidget(self.scroll_content)
+
+        # Frame layout containing only the Scroll Area
+        frame_layout = QVBoxLayout(self.frame)
+        frame_layout.setContentsMargins(0, 0, 0, 0)
+        frame_layout.addWidget(self.scroll_area)
+
+        main_layout.addWidget(self.frame)
         self.hide()
 
     # ------------------------------------------------------------------ #
@@ -220,6 +240,17 @@ class Popup(QWidget):
         with self._data_lock:
             return self._latest_data
 
+    def _show_loading_state(self):
+        """Displays a clean scanning state instantly on Shift keypress."""
+        self._clear_entry_widgets()
+        
+        loading_label = QLabel("Scanning screen...")
+        loading_label.setStyleSheet("color: #888; font-size: 14px; font-style: italic; padding: 10px;")
+        
+        self.content_layout.addWidget(loading_label)
+        self._entry_widgets.append(loading_label)
+        self.show_popup()
+
     def process_latest_data_loop(self):
         if not self.is_calibrated:
             self._calibrate_empirically()
@@ -227,7 +258,7 @@ class Popup(QWidget):
         latest_data = self.get_latest_data()
         if latest_data and latest_data != self._last_latest_data:
             new_size = self._build_entries(latest_data)
-            self.setFixedSize(new_size)
+            # Size is now fixed to (420, 320), so we do not call setFixedSize(new_size) here anymore
 
             # === AUTO-COPY FULL SENTENCE TO CLIPBOARD WITHOUT REPETITIONS ===
             if len(latest_data) > 0:
@@ -256,10 +287,14 @@ class Popup(QWidget):
                 self.toggle_active = False
                 self.hide_popup()
             else:
-                # If popup is hidden, press hotkey to toggle it ON and lock position
+                # If popup is hidden, toggle it ON instantly
                 self.toggle_active = True
                 mouse_pos = QCursor.pos()
                 self.move_to(mouse_pos.x(), mouse_pos.y())
+                
+                # If data has not yet arrived, show the loading state immediately!
+                if not data_present:
+                    self._show_loading_state()
                 
         self._hotkey_was_active_last_tick = hotkey_active
 
@@ -267,6 +302,10 @@ class Popup(QWidget):
         should_show = data_present and config.is_enabled and (
             self.is_pinned or hotkey_active or self.toggle_active
         )
+
+        # In manual toggle mode, if we are loading, we still show the popup container
+        if self.toggle_active and not data_present:
+            should_show = True
 
         if should_show:
             self.show_popup()
@@ -391,35 +430,26 @@ class Popup(QWidget):
         if config.show_frequency and entry.freq < 999_999:
             header_html += f' <span style="color:{c_text}; font-size:{config.font_size_definitions - 2}px; opacity:0.6;">#{entry.freq}</span>'
 
-        def_text_parts_calc = []
         def_text_parts_html = []
         for idx, sense in enumerate(entry.senses):
             glosses = sense.get('glosses', [])
             glosses_str = ", ".join(glosses) if (glosses and config.show_all_glosses) else (glosses[0] if glosses else "")
-            pos_list = sense.get('pos', [])
             tags_list = sense.get('tags', [])
-            sense_calc = f"({idx + 1})" if config.show_all_glosses else ""
-            sense_html = f"<b>({idx + 1})</b> " if config.show_all_glosses else ""
-            if config.show_pos and pos_list:
-                pos_str = f' ({", ".join(pos_list)})'
-                sense_calc += pos_str
-                sense_html += f'<span style="color:{c_text}; opacity:0.7;"><i>{pos_str}</i></span> '
+            
+            # Formulate styled line blocks instead of clumping with raw line breaks
+            sense_html = f'<div style="margin-bottom: 5px; line-height: 1.45;">'
+            sense_html += f'<b>{idx + 1}.</b> ' if config.show_all_glosses else ""
+            
+            # Part-of-Speech tags completely excluded to satisfy Requirement 2
+            
             if config.show_tags and tags_list:
-                tags_str = f' [{", ".join(tags_list)}]'
-                sense_calc += tags_str
-                sense_html += f'<span style="color:{c_text}; font-size:{config.font_size_definitions - 2}px; opacity:0.7;">{tags_str}</span> '
-            sense_calc += glosses_str
-            sense_html += glosses_str
-            def_text_parts_calc.append(sense_calc)
+                tags_str = f'[{", ".join(tags_list)}] '
+                sense_html += f'<span style="color:{c_text}; font-size:{config.font_size_definitions - 2}px; opacity:0.7;">{tags_str}</span>'
+            
+            sense_html += f'{glosses_str}</div>'
             def_text_parts_html.append(sense_html)
 
-        if config.compact_mode:
-            separator = "; "
-            full_def_text_html = separator.join(def_text_parts_html)
-        else:
-            separator = "<br>"
-            full_def_text_html = separator.join(def_text_parts_html)
-
+        full_def_text_html = "".join(def_text_parts_html)
         body_html = f'<span style="font-size:{config.font_size_definitions}px;">{full_def_text_html}</span>'
 
         mine_button = self._make_mine_button(entry)
@@ -512,24 +542,22 @@ class Popup(QWidget):
         # --- DYNAMIC RICH NESTED LIST GENERATION ---
         html_senses = []
         for sense in entry.senses:
-            pos = sense.get('pos', [])
             glosses = sense.get('glosses', [])
             if not glosses:
                 continue
             
-            # Format parts of speech nicely in italics
-            pos_str = f"<i>({', '.join(pos)})</i> " if pos else ""
+            # POS strings are excluded entirely from Anki card definitions for clean listings (Requirement 2)
             
             if len(glosses) == 1:
                 # Single meaning/synonym
-                html_senses.append(f"<li>{pos_str}{glosses[0]}</li>")
+                html_senses.append(f"<li>{glosses[0]}</li>")
             else:
                 # Multiple synonyms under this sense (rendered as circular sub-bullets)
                 bullets = "".join(f"<li>{g}</li>" for g in glosses)
-                html_senses.append(f"<li>{pos_str}<ul style='list-style-type: circle; margin-top: 2px; margin-bottom: 2px;'>{bullets}</ul></li>")
+                html_senses.append(f"<li><ul style='list-style-type: circle; margin-top: 2px; margin-bottom: 2px; padding-left: 20px;'>{bullets}</ul></li>")
         
         # Combine into a structured, padded ordered list (1., 2., 3...)
-        beautiful_glossary = f"<ol style='margin-top: 2px; margin-bottom: 2px; padding-left: 20px;'>{''.join(html_senses)}</ol>"
+        beautiful_glossary = f"<ol style='margin-top: 2px; margin-bottom: 2px; padding-left: 20px; line-height: 1.45;'>{''.join(html_senses)}</ol>"
 
         # Map both the short and full glossary variables to our rich list structure
         glossary = beautiful_glossary

@@ -643,10 +643,20 @@ class SettingsDialog(QDialog):
                 if isinstance(item, list) and len(item) == 2:
                     field_name = item[0]
                     placeholder = item[1]
-                    mapping_dict[field_name] = translate_val(placeholder)
+                    
+                    # --- REMOVE NOTES FIELD WORKFLOW ---
+                    if field_name == "Notes":
+                        # Explicitly exclude the Notes field from receiving any mapping
+                        mapping_dict[field_name] = ""
+                    else:
+                        mapping_dict[field_name] = translate_val(placeholder)
+                        
                 elif isinstance(item, dict):
                     for k, v in item.items():
-                        mapping_dict[k] = translate_val(v)
+                        if k == "Notes":
+                            mapping_dict[k] = ""
+                        else:
+                            mapping_dict[k] = translate_val(v)
 
             # Auto-populate UI fields
             self.anki_enabled_check.setChecked(enabled)
