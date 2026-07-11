@@ -219,16 +219,33 @@ class Popup(QWidget):
 
         data_present = bool(self._latest_data)
         hotkey_active = self.input_loop.is_virtual_hotkey_down()
-        should_show = data_present and config.is_enabled and (self.is_pinned or hotkey_active)
+
+        # Check if the mouse is close enough to the popup frame.
+        # This keeps the window open during the gap between hotkey release and pinning.
+        mouse_near_popup = False
+        if self.is_visible and data_present:
+            cursor_pos = QCursor.pos()
+            window_rect = self.geometry()
+            # 150px padding gives you a safe travel bridge from cursor to the popup
+            padding = 150
+            padded_rect = window_rect.adjusted(-padding, -padding, padding, padding)
+            if padded_rect.contains(cursor_pos):
+                mouse_near_popup = True
+
+        # Keep popup visible if pinned, hotkey active, or cursor is in the near padding area
+        should_show = data_present and config.is_enabled and (self.is_pinned or hotkey_active or mouse_near_popup)
 
         if should_show:
             self.show_popup()
         else:
             self.hide_popup()
 
+        # Follow the cursor ONLY when hotkey is down (or auto scan is running).
+        # When hotkey is released, freeze position so the user can move their cursor to click.
         if not self.is_pinned:
-            mouse_pos = QCursor.pos()
-            self.move_to(mouse_pos.x(), mouse_pos.y())
+            if hotkey_active:
+                mouse_pos = QCursor.pos()
+                self.move_to(mouse_pos.x(), mouse_pos.y())
 
     # ------------------------------------------------------------------ #
     # Row building
@@ -419,6 +436,10 @@ class Popup(QWidget):
         button.setObjectName("mineButton")  # for the stylesheet selector below
         button.setFixedSize(MINE_BUTTON_SIZE, MINE_BUTTON_SIZE)
         button.setCursor(Qt.CursorShape.PointingHandCursor)
+        
+        # Prevent button click focus shifts from generating focusOut dismissal triggers
+        button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        
         button.setStyleSheet(self._mine_button_stylesheet())
         button.setToolTip("Mine into Anki")
         button.clicked.connect(lambda _checked=False, e=entry, b=button: self._mine_entry(e, b))
