@@ -2,6 +2,7 @@
 import json
 import logging
 import threading
+import sys  # Explicitly imported to prevent path/exiting conflicts
 from typing import List, Optional
 
 from PyQt6.QtCore import QTimer, QPoint, QSize, QEvent, pyqtSignal
@@ -34,82 +35,89 @@ class Popup(QWidget):
     mine_finished = pyqtSignal(object, str, str)  # (button, status, message)
 
     def __init__(self, shared_state, input_loop):
-        super().__init__()
-        self._latest_data = None
-        self._last_latest_data = None
-        self._data_lock = threading.Lock()
-        self._previous_active_window_on_mac = None
+        try:
+            super().__init__()
+            self._latest_data = None
+            self._last_latest_data = None
+            self._data_lock = threading.Lock()
+            self._previous_active_window_on_mac = None
 
-        self.shared_state = shared_state
-        self.input_loop = input_loop
+            self.shared_state = shared_state
+            self.input_loop = input_loop
 
-        self.is_visible = False
-        self.is_pinned = False  # True while the mouse is hovering the popup itself
-        self._entry_widgets = []  # currently-built per-entry row widgets, kept so we can tear them down
+            self.is_visible = False
+            self.is_pinned = False  # True while the mouse is hovering the popup itself
+            self._entry_widgets = []  # currently-built per-entry row widgets, kept so we can tear them down
 
-        # --- TOGGLE LOGIC STATES ---
-        self.toggle_active = False
-        self._hotkey_was_active_last_tick = False
+            # --- TOGGLE LOGIC STATES ---
+            self.toggle_active = False
+            self._hotkey_was_active_last_tick = False
 
-        # --- NO-REPETITION CLIPBOARD TRACKER ---
-        self._last_copied_word = ""
+            # --- NO-REPETITION CLIPBOARD TRACKER ---
+            self._last_copied_word = ""
 
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.process_latest_data_loop)
-        self.timer.start(10)
+            self.timer = QTimer(self)
+            self.timer.timeout.connect(self.process_latest_data_loop)
+            self.timer.start(10)
 
-        self.mine_finished.connect(self._apply_mine_feedback)
+            self.mine_finished.connect(self._apply_mine_feedback)
 
-        self.probe_label = QLabel()
-        self.probe_label.setWordWrap(True)
-        self.probe_label.setTextFormat(Qt.TextFormat.RichText)
+            self.probe_label = QLabel()
+            self.probe_label.setWordWrap(True)
+            self.probe_label.setTextFormat(Qt.TextFormat.RichText)
 
-        self.is_calibrated = False
-        self.header_chars_per_line = 50
-        self.def_chars_per_line = 50
+            self.is_calibrated = False
+            self.header_chars_per_line = 50
+            self.def_chars_per_line = 50
 
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool
-        )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setStyleSheet("background: transparent;")
+            self.setWindowFlags(
+                Qt.WindowType.FramelessWindowHint |
+                Qt.WindowType.WindowStaysOnTopHint |
+                Qt.WindowType.Tool
+            )
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+            self.setStyleSheet("background: transparent;")
 
-        # Base layout
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
+            # Base layout
+            main_layout = QVBoxLayout(self)
+            main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Outer styled Frame
-        self.frame = QFrame()
-        self._apply_frame_stylesheet()
-        
-        # --- FIXED SIZE & SCROLLBAR WORKFLOW ---
-        self.setFixedSize(420, 320)  # Lock popup to a comfortable fixed size
+            # Outer styled Frame
+            self.frame = QFrame()
+            self._apply_frame_stylesheet()
+            
+            # --- FIXED SIZE & SCROLLBAR WORKFLOW ---
+            self.resize(450, 600)  # Safe default initialization size to prevent layout assertions
 
-        # Vertical Scroll Area Setup
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.scroll_area.setStyleSheet("background: transparent; border: none;")
+            # Vertical Scroll Area Setup
+            self.scroll_area = QScrollArea()
+            self.scroll_area.setWidgetResizable(True)
+            self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            self.scroll_area.setStyleSheet("background: transparent; border: none;")
 
-        # Inner Scroll Content Widget
-        self.scroll_content = QWidget()
-        self.scroll_content.setStyleSheet("background: transparent; border: none;")
-        self.content_layout = QVBoxLayout(self.scroll_content)
-        self.content_layout.setContentsMargins(10, 10, 10, 10)
-        self.content_layout.setSpacing(6)
+            # Inner Scroll Content Widget
+            self.scroll_content = QWidget()
+            self.scroll_content.setStyleSheet("background: transparent; border: none;")
+            self.content_layout = QVBoxLayout(self.scroll_content)
+            self.content_layout.setContentsMargins(10, 10, 10, 10)
+            self.content_layout.setSpacing(6)
 
-        self.scroll_area.setWidget(self.scroll_content)
+            self.scroll_area.setWidget(self.scroll_content)
 
-        # Frame layout containing only the Scroll Area
-        frame_layout = QVBoxLayout(self.frame)
-        frame_layout.setContentsMargins(0, 0, 0, 0)
-        frame_layout.addWidget(self.scroll_area)
+            # Frame layout containing only the Scroll Area
+            frame_layout = QVBoxLayout(self.frame)
+            frame_layout.setContentsMargins(0, 0, 0, 0)
+            frame_layout.addWidget(self.scroll_area)
 
-        main_layout.addWidget(self.frame)
-        self.hide()
+            main_layout.addWidget(self.frame)
+            self.hide()
+        except Exception as e:
+            logger.exception("CRITICAL ERROR IN POPUP INIT: %s", e)
+            print(f"\nCRITICAL ERROR IN POPUP INIT:\n{e}\n", flush=True)
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
 
     # ------------------------------------------------------------------ #
     # Pin-on-hover: while the cursor is over the popup itself, stop it
@@ -249,82 +257,96 @@ class Popup(QWidget):
         
         self.content_layout.addWidget(loading_label)
         self._entry_widgets.append(loading_label)
+        
+        self.setFixedSize(450, 150)  # Start with a safe height for the loading state (width 450)
         self.show_popup()
 
     def process_latest_data_loop(self):
-        if not self.is_calibrated:
-            self._calibrate_empirically()
+        try:
+            if not self.is_calibrated:
+                self._calibrate_empirically()
 
-        latest_data = self.get_latest_data()
-        if latest_data and latest_data != self._last_latest_data:
-            new_size = self._build_entries(latest_data)
-            # Size is now fixed to (420, 320), so we do not call setFixedSize(new_size) here anymore
-
-            # === AUTO-COPY FULL SENTENCE TO CLIPBOARD WITHOUT REPETITIONS ===
-            if len(latest_data) > 0:
-                first_entry = latest_data[0]
-                scanned_word = getattr(first_entry, 'written_form', '') or getattr(first_entry, 'character', '')
-                sentence_text = getattr(first_entry, 'sentence', '').strip()
+            latest_data = self.get_latest_data()
+            if latest_data and latest_data != self._last_latest_data:
+                self._build_entries(latest_data)
                 
-                # Use the full sentence if available; otherwise, fall back to the single word
-                target_text = sentence_text if sentence_text else scanned_word
-                
-                # Only copy if it is a new line (prevents spamming clipboard history)
-                if target_text and target_text != self._last_copied_word:
-                    QApplication.clipboard().setText(target_text)
-                    self._last_copied_word = target_text
+                # Locked strictly to exactly 450x600 pixels (Requirement 6 & Size Fix)
+                self.setFixedSize(450, 600)
 
-        self._last_latest_data = latest_data
+                # Re-trigger position alignment now that we know the final height of the data
+                mouse_pos = QCursor.pos()
+                self.move_to(mouse_pos.x(), mouse_pos.y())
 
-        data_present = bool(self._latest_data)
-        hotkey_active = self.input_loop.is_virtual_hotkey_down()
+                # === AUTO-COPY FULL SENTENCE TO CLIPBOARD WITHOUT REPETITIONS ===
+                if len(latest_data) > 0:
+                    first_entry = latest_data[0]
+                    scanned_word = getattr(first_entry, 'written_form', '') or getattr(first_entry, 'character', '')
+                    sentence_text = getattr(first_entry, 'sentence', '').strip()
+                    
+                    # Use the full sentence if available; otherwise, fall back to the single word
+                    target_text = sentence_text if sentence_text else scanned_word
+                    
+                    # Only copy if it is a new line (prevents spamming clipboard history)
+                    if target_text and target_text != self._last_copied_word:
+                        QApplication.clipboard().setText(target_text)
+                        self._last_copied_word = target_text
 
-        # --- TOGGLE FUNCTIONALITY ---
-        # Detect the moment the hotkey is first tapped (rising edge)
-        if hotkey_active and not self._hotkey_was_active_last_tick:
-            if self.is_visible:
-                # If popup is visible, press hotkey to toggle it OFF
-                self.toggle_active = False
-                self.hide_popup()
+            self._last_latest_data = latest_data
+
+            data_present = bool(self._latest_data)
+            hotkey_active = self.input_loop.is_virtual_hotkey_down()
+
+            # --- TOGGLE FUNCTIONALITY ---
+            # Detect the moment the hotkey is first tapped (rising edge)
+            if hotkey_active and not self._hotkey_was_active_last_tick:
+                if self.is_visible:
+                    # If popup is visible, press hotkey to toggle it OFF
+                    self.toggle_active = False
+                    self.hide_popup()
+                else:
+                    # If popup is hidden, toggle it ON instantly
+                    self.toggle_active = True
+                    mouse_pos = QCursor.pos()
+                    self.move_to(mouse_pos.x(), mouse_pos.y())
+                    
+                    # If data has not yet arrived, show the loading state immediately!
+                    if not data_present:
+                        self._show_loading_state()
+                    
+            self._hotkey_was_active_last_tick = hotkey_active
+
+            # Keep popup visible if pinned, hotkey active, or locked on via toggle
+            should_show = data_present and config.is_enabled and (
+                self.is_pinned or hotkey_active or self.toggle_active
+            )
+
+            # In manual toggle mode, if we are loading, we still show the popup container
+            if self.toggle_active and not data_present:
+                should_show = True
+
+            if should_show:
+                self.show_popup()
             else:
-                # If popup is hidden, toggle it ON instantly
-                self.toggle_active = True
-                mouse_pos = QCursor.pos()
-                self.move_to(mouse_pos.x(), mouse_pos.y())
-                
-                # If data has not yet arrived, show the loading state immediately!
-                if not data_present:
-                    self._show_loading_state()
-                
-        self._hotkey_was_active_last_tick = hotkey_active
+                self.hide_popup()
 
-        # Keep popup visible if pinned, hotkey active, or locked on via toggle
-        should_show = data_present and config.is_enabled and (
-            self.is_pinned or hotkey_active or self.toggle_active
-        )
-
-        # In manual toggle mode, if we are loading, we still show the popup container
-        if self.toggle_active and not data_present:
-            should_show = True
-
-        if should_show:
-            self.show_popup()
-        else:
-            self.hide_popup()
-
-        # Follow cursor only if we are not hovering over the popup and we are NOT locked on via toggle.
-        if not self.is_pinned and not self.toggle_active:
-            if hotkey_active:
-                mouse_pos = QCursor.pos()
-                self.move_to(mouse_pos.x(), mouse_pos.y())
+            # Follow cursor only if we are not hovering over the popup and we are NOT locked on via toggle.
+            if not self.is_pinned and not self.toggle_active:
+                if hotkey_active:
+                    mouse_pos = QCursor.pos()
+                    self.move_to(mouse_pos.x(), mouse_pos.y())
+        except Exception as e:
+            logger.exception("CRITICAL ERROR IN POPUP UPDATE LOOP: %s", e)
+            print(f"\nCRITICAL ERROR IN POPUP UPDATE LOOP:\n{e}\n", flush=True)
 
     # ------------------------------------------------------------------ #
     # Row building
     # ------------------------------------------------------------------ #
     def _clear_entry_widgets(self):
-        for w in self._entry_widgets:
-            self.content_layout.removeWidget(w)
-            w.deleteLater()
+        # Recursively clear all layouts and widgets safely to avoid memory or orphaning leaks (Requirement 6)
+        while self.content_layout.count() > 0:
+            item = self.content_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
         self._entry_widgets = []
 
     def _make_separator(self) -> QFrame:
@@ -333,10 +355,8 @@ class Popup(QWidget):
         line.setStyleSheet("background-color: rgba(255,255,255,40); max-height: 1px; border: none;")
         return line
 
-    def _build_entries(self, entries: List) -> QSize:
+    def _build_entries(self, entries: List) -> int:
         self._clear_entry_widgets()
-        max_ratio = 0.0
-        calc_parts = []  # (kind, text_for_ratio) just to compute overall width like before
 
         for i, entry in enumerate(entries):
             if i > 0:
@@ -349,26 +369,17 @@ class Popup(QWidget):
             else:
                 row, ratio = self._build_word_row(entry)
 
-            max_ratio = max(max_ratio, ratio)
             self.content_layout.addWidget(row)
             self._entry_widgets.append(row)
 
-        optimal_content_width = self.max_content_width * min(1.0, max_ratio)
-        optimal_content_width = max(optimal_content_width, 220)
-
-        for w in self._entry_widgets:
-            w.setFixedWidth(int(optimal_content_width))
-
-        self.frame.adjustSize()
+        # Inject vertical stretch spacer at the bottom (Requirement 5: Wasted Space Fix)
+        # This tightly packs all content rows to the top, eliminating empty spacing gaps.
+        self.content_layout.addStretch(1)
         self.content_layout.activate()
-        final_height = self.frame.sizeHint().height()
-
-        margins = self.content_layout.contentsMargins()
-        border_width = 1
-        horizontal_padding = margins.left() + margins.right() + (border_width * 2)
-
-        final_size = QSize(int(optimal_content_width) + horizontal_padding, final_height)
-        return final_size
+        
+        # Calculate the natural layout height to tell the caller how big to size the window
+        natural_height = self.content_layout.sizeHint().height() + 30
+        return natural_height
 
     def _build_kanji_row(self, entry: KanjiEntry):
         c_word = config.color_highlight_word
@@ -560,6 +571,12 @@ class Popup(QWidget):
         beautiful_glossary = f"<ol style='margin-top: 2px; margin-bottom: 2px; padding-left: 20px; line-height: 1.45;'>{''.join(html_senses)}</ol>"
 
         # Map both the short and full glossary variables to our rich list structure
+        # Formats the furigana into standard Kanji[Kana] layout for Anki's native filter (Requirement 2)
+        if entry.written_form != entry.reading:
+            furigana_reading = f"{entry.written_form}[{entry.reading}]"
+        else:
+            furigana_reading = entry.reading
+
         glossary = beautiful_glossary
         glossary_full = beautiful_glossary
 
@@ -575,7 +592,7 @@ class Popup(QWidget):
 
         word = MineableWord(
             expression=entry.written_form,
-            reading=entry.reading,
+            reading=furigana_reading,
             glossary=glossary,
             glossary_full=glossary_full,
             sentence=entry.sentence,
@@ -624,73 +641,43 @@ class Popup(QWidget):
             button.setEnabled(True)
 
     # ------------------------------------------------------------------ #
-    # Positioning / visibility (unchanged from upstream)
+    # Positioning / visibility (using fixed 450x600 size constants)
     # ------------------------------------------------------------------ #
     def move_to(self, x, y):
         cursor_point = QPoint(x, y)
         screen = QApplication.screenAt(cursor_point) or QApplication.primaryScreen()
         screen_geo = screen.geometry()
-        popup_size = self.size()
+        
+        # Locked strictly to exactly 450x600 pixels (Requirement 6 & Size Fix)
+        popup_width = 450
+        popup_height = 600
         offset = 15
 
         ratio = screen.devicePixelRatio()
-        x, y = magpie_manager.transform_raw_to_visual((int(x), int(y)), ratio)
+        
+        # Standard cursor-arrow offset adjustments (+4px, +6px) 
+        # to compensate for logical arrow tips on High-DPI monitors (Requirement 6: Precision Fix)
+        adjusted_x = int(x) + 4
+        adjusted_y = int(y) + 6
+        
+        x, y = magpie_manager.transform_raw_to_visual((adjusted_x, adjusted_y), ratio)
 
-        mode = config.popup_position_mode
+        # Standard centered positioning under the cursor
+        final_x = x - (popup_width / 2)
+        final_y = y + offset
 
-        if mode == 'visual_novel_mode':
-            screen_height = screen_geo.height()
-            cursor_y_in_screen = y - screen_geo.top()
-            if cursor_y_in_screen > (2 * screen_height / 3):
-                is_below = False
-            elif cursor_y_in_screen < (screen_height / 3):
-                is_below = True
-            else:
-                is_below = cursor_y_in_screen < (screen_height / 2)
-            final_y = (y + offset) if is_below else (y - popup_size.height() - offset)
+        # Smooth boundary adjustment: slide popup inside screen if it goes off bottom/sides
+        if final_y + popup_height > screen_geo.bottom():
+            final_y = screen_geo.bottom() - popup_height - 10
 
-            if final_y < screen_geo.top(): final_y = screen_geo.top()
-            if final_y + popup_size.height() > screen_geo.bottom():
-                final_y = screen_geo.bottom() - popup_size.height()
+        if final_x < screen_geo.left():
+            final_x = screen_geo.left() + 10
+        if final_x + popup_width > screen_geo.right():
+            final_x = screen_geo.right() - popup_width - 10
 
-            screen_width = screen_geo.width()
-            cursor_x_in_screen = x - screen_geo.left()
-            pos_right = x + offset
-            pos_center = x - popup_size.width() / 2.0
-            pos_left = x - popup_size.width() - offset
-
-            if cursor_x_in_screen < screen_width / 2.0:
-                ratio = cursor_x_in_screen / (screen_width / 2.0)
-                final_x = pos_right * (1 - ratio) + pos_center * ratio
-            else:
-                ratio = (cursor_x_in_screen - (screen_width / 2.0)) / (screen_width / 2.0)
-                final_x = pos_center * (1 - ratio) + pos_left * ratio
-
-        elif mode == 'flip_horizontally':
-            preferred_x = x + offset
-            final_x = preferred_x if preferred_x + popup_size.width() <= screen_geo.right() else x - popup_size.width() - offset
-
-            final_y = y + offset
-            if final_y + popup_size.height() > screen_geo.bottom(): final_y = screen_geo.bottom() - popup_size.height()
-            if final_y < screen_geo.top(): final_y = screen_geo.top()
-
-        elif mode == 'flip_vertically':
-            final_x = x + offset
-            if final_x + popup_size.width() > screen_geo.right(): final_x = screen_geo.right() - popup_size.width()
-            if final_x < screen_geo.left(): final_x = screen_geo.left()
-
-            preferred_y = y + offset
-            final_y = preferred_y if preferred_y + popup_size.height() <= screen_geo.bottom() else y - popup_size.height() - offset
-
-        else:  # 'flip_both'
-            preferred_x = x + offset
-            final_x = preferred_x if preferred_x + popup_size.width() <= screen_geo.right() else x - popup_size.width() - offset
-
-            preferred_y = y + offset
-            final_y = preferred_y if preferred_y + popup_size.height() <= screen_geo.bottom() else y - popup_size.height() - offset
-
-        final_x = max(screen_geo.left(), min(final_x, screen_geo.right() - popup_size.width()))
-        final_y = max(screen_geo.top(), min(final_y, screen_geo.bottom() - popup_size.height()))
+        # Protect against clipping top-of-screen bounds
+        if final_y < screen_geo.top():
+            final_y = screen_geo.top()
 
         self.move(int(final_x), int(final_y))
 

@@ -706,7 +706,7 @@ class SettingsDialog(QDialog):
             config.magpie_compatibility = self.magpie_check.isChecked()
         config.compact_mode = self.compact_check.isChecked()
         config.show_all_glosses = self.show_glosses_check.isChecked()
-        config.show_deconj_check = self.show_deconj_check.isChecked() if hasattr(self, 'show_deconj_check') else config.show_deconjugation
+        config.show_deconjugation = self.show_deconj_check.isChecked() if hasattr(self, 'show_deconj_check') else config.show_deconjugation
         config.show_pos = self.show_pos_check.isChecked()
         config.show_tags = self.show_tags_check.isChecked()
         config.show_frequency = self.show_frequency_check.isChecked()
