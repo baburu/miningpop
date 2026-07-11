@@ -51,6 +51,9 @@ class Popup(QWidget):
         self.toggle_active = False
         self._hotkey_was_active_last_tick = False
 
+        # --- NO-REPETITION CLIPBOARD TRACKER ---
+        self._last_copied_word = ""
+
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.process_latest_data_loop)
         self.timer.start(10)
@@ -137,7 +140,6 @@ class Popup(QWidget):
             QPushButton.mineButton:disabled {{
                 border: 1px solid #888;
                 color: #888;
-                background-color: transparent;
             }}
         """)
 
@@ -208,7 +210,6 @@ class Popup(QWidget):
             # If the popup is locked on via toggle:
             if self.toggle_active:
                 # If we already have a searched word locked in, ignore any new updates
-                # (preventing other words from overwriting it as the mouse travels)
                 if self._latest_data:
                     return
             
@@ -226,6 +227,17 @@ class Popup(QWidget):
         if latest_data and latest_data != self._last_latest_data:
             new_size = self._build_entries(latest_data)
             self.setFixedSize(new_size)
+
+            # === AUTO-COPY TO CLIPBOARD WITHOUT REPETITIONS ===
+            if len(latest_data) > 0:
+                first_entry = latest_data[0]
+                scanned_word = getattr(first_entry, 'written_form', '') or getattr(first_entry, 'character', '')
+                
+                # Only copy if it is a new word (prevents spamming clipboard history)
+                if scanned_word and scanned_word != self._last_copied_word:
+                    QApplication.clipboard().setText(scanned_word)
+                    self._last_copied_word = scanned_word
+
         self._last_latest_data = latest_data
 
         data_present = bool(self._latest_data)
@@ -257,7 +269,6 @@ class Popup(QWidget):
             self.hide_popup()
 
         # Follow cursor only if we are not hovering over the popup and we are NOT locked on via toggle.
-        # This allows you to safely move your cursor onto the stationary frozen popup!
         if not self.is_pinned and not self.toggle_active:
             if hotkey_active:
                 mouse_pos = QCursor.pos()
