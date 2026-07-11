@@ -4,7 +4,7 @@ from PyQt6.QtGui import QColor, QIcon, QFontDatabase
 from PyQt6.QtWidgets import (QWidget, QDialog, QFormLayout, QComboBox,
                              QSpinBox, QCheckBox, QPushButton, QColorDialog, QVBoxLayout, QHBoxLayout,
                              QGroupBox, QDialogButtonBox, QLabel, QSlider, QDoubleSpinBox,
-                             QTabWidget, QSizePolicy, QFontComboBox)
+                             QTabWidget, QSizePolicy, QFontComboBox, QLineEdit)
 
 from meikipop.dictionary.lookup import Lookup
 from meikipop.config.config import config, APP_NAME, IS_WINDOWS
@@ -314,10 +314,66 @@ class SettingsDialog(QDialog):
         self.tab_appearance_layout.addWidget(color_group)
         self.tab_appearance_layout.addStretch()
 
+        # ==========================================
+        # TAB 4: Anki Mining Settings (New Tab)
+        # ==========================================
+        self.tab_anki = QWidget()
+        self.tab_anki_layout = QVBoxLayout(self.tab_anki)
+
+        anki_group = QGroupBox("Anki Mining Settings")
+        anki_layout = QFormLayout()
+        self.form_layouts.append(anki_layout)
+
+        self.anki_enabled_check = QCheckBox()
+        self.anki_enabled_check.setChecked(config.anki_enabled)
+        self.anki_enabled_check.toggled.connect(self._update_anki_state)
+        anki_layout.addRow("Enable Anki Mining:", self.anki_enabled_check)
+
+        self.anki_url_input_label = QLabel("AnkiConnect URL:")
+        self.anki_url_input = QLineEdit()
+        self.anki_url_input.setText(config.anki_connect_url)
+        self._set_expanding(self.anki_url_input)
+        anki_layout.addRow(self.anki_url_input_label, self.anki_url_input)
+
+        self.anki_deck_input_label = QLabel("Deck Name:")
+        self.anki_deck_input = QLineEdit()
+        self.anki_deck_input.setText(config.anki_deck)
+        self._set_expanding(self.anki_deck_input)
+        anki_layout.addRow(self.anki_deck_input_label, self.anki_deck_input)
+
+        self.anki_model_input_label = QLabel("Note Type:")
+        self.anki_model_input = QLineEdit()
+        self.anki_model_input.setText(config.anki_model)
+        self._set_expanding(self.anki_model_input)
+        anki_layout.addRow(self.anki_model_input_label, self.anki_model_input)
+
+        self.anki_mapping_input_label = QLabel("Field Mapping (JSON):")
+        self.anki_mapping_input = QLineEdit()
+        self.anki_mapping_input.setText(config.anki_field_mapping)
+        self.anki_mapping_input.setPlaceholderText('{"Front": "{expression}", "Back": "{reading}<br>{glossary}"}')
+        self._set_expanding(self.anki_mapping_input)
+        anki_layout.addRow(self.anki_mapping_input_label, self.anki_mapping_input)
+
+        self.anki_tag_input_label = QLabel("Default Tag:")
+        self.anki_tag_input = QLineEdit()
+        self.anki_tag_input.setText(config.anki_tag)
+        self._set_expanding(self.anki_tag_input)
+        anki_layout.addRow(self.anki_tag_input_label, self.anki_tag_input)
+
+        self.anki_check_dup_check_label = QLabel("Check for Duplicates:")
+        self.anki_check_dup_check = QCheckBox()
+        self.anki_check_dup_check.setChecked(config.anki_check_duplicates)
+        anki_layout.addRow(self.anki_check_dup_check_label, self.anki_check_dup_check)
+
+        anki_group.setLayout(anki_layout)
+        self.tab_anki_layout.addWidget(anki_group)
+        self.tab_anki_layout.addStretch()
+
         # Add tabs to main layout
         self.tabs.addTab(self.tab_general, "General")
         self.tabs.addTab(self.tab_content, "Popup Content")
         self.tabs.addTab(self.tab_appearance, "Popup Appearance")
+        self.tabs.addTab(self.tab_anki, "Anki")
         main_layout.addWidget(self.tabs)
 
         # Buttons
@@ -334,6 +390,7 @@ class SettingsDialog(QDialog):
         self._update_auto_scan_state(self.auto_scan_check.isChecked())
         self._update_glens_state(self.ocr_provider_combo.currentText())
         self._update_kanji_options_state(self.show_kanji_check.isChecked())
+        self._update_anki_state(self.anki_enabled_check.isChecked())
 
     def _set_expanding(self, widget):
         """Helper to let a widget expand horizontally"""
@@ -385,6 +442,22 @@ class SettingsDialog(QDialog):
         self.show_examples_check.setEnabled(is_checked)
         self.show_components_check.setEnabled(is_checked)
         self.lookup.clear_cache()
+
+    def _update_anki_state(self, is_checked):
+        """Grays out Anki settings fields if mining is disabled."""
+        self.anki_url_input.setEnabled(is_checked)
+        self.anki_deck_input.setEnabled(is_checked)
+        self.anki_model_input.setEnabled(is_checked)
+        self.anki_mapping_input.setEnabled(is_checked)
+        self.anki_tag_input.setEnabled(is_checked)
+        self.anki_check_dup_check.setEnabled(is_checked)
+        
+        self.anki_url_input_label.setEnabled(is_checked)
+        self.anki_deck_input_label.setEnabled(is_checked)
+        self.anki_model_input_label.setEnabled(is_checked)
+        self.anki_mapping_input_label.setEnabled(is_checked)
+        self.anki_tag_input_label.setEnabled(is_checked)
+        self.anki_check_dup_check_label.setEnabled(is_checked)
 
     def _mark_as_custom(self):
         if self.theme_combo.currentText() != "Custom":
@@ -439,6 +512,15 @@ class SettingsDialog(QDialog):
         config.show_kanji = self.show_kanji_check.isChecked()
         config.show_examples = self.show_examples_check.isChecked()
         config.show_components = self.show_components_check.isChecked()
+
+        # Update Anki config values
+        config.anki_enabled = self.anki_enabled_check.isChecked()
+        config.anki_connect_url = self.anki_url_input.text()
+        config.anki_deck = self.anki_deck_input.text()
+        config.anki_model = self.anki_model_input.text()
+        config.anki_field_mapping = self.anki_mapping_input.text()
+        config.anki_tag = self.anki_tag_input.text()
+        config.anki_check_duplicates = self.anki_check_dup_check.isChecked()
 
         selected_friendly_name = self.popup_position_combo.currentText()
         config.popup_position_mode = self.popup_mode_map.get(selected_friendly_name, "flip_vertically")
