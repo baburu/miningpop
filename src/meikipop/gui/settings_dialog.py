@@ -4,7 +4,7 @@ from PyQt6.QtGui import QColor, QIcon, QFontDatabase
 from PyQt6.QtWidgets import (QWidget, QDialog, QFormLayout, QComboBox,
                              QSpinBox, QCheckBox, QPushButton, QColorDialog, QVBoxLayout, QHBoxLayout,
                              QGroupBox, QDialogButtonBox, QLabel, QSlider, QDoubleSpinBox,
-                             QTabWidget, QSizePolicy, QFontComboBox, QLineEdit)
+                             QTabWidget, QSizePolicy, QFontComboBox, QLineEdit, QFileDialog, QMessageBox)
 
 from meikipop.dictionary.lookup import Lookup
 from meikipop.config.config import config, APP_NAME, IS_WINDOWS
@@ -324,6 +324,11 @@ class SettingsDialog(QDialog):
         anki_layout = QFormLayout()
         self.form_layouts.append(anki_layout)
 
+        # Import Yomitan Button
+        self.import_yomitan_btn = QPushButton("Import from Yomitan Settings...")
+        self.import_yomitan_btn.clicked.connect(self._import_yomitan_settings)
+        anki_layout.addRow("Auto Configuration:", self.import_yomitan_btn)
+
         self.anki_enabled_check = QCheckBox()
         self.anki_enabled_check.setChecked(config.anki_enabled)
         self.anki_enabled_check.toggled.connect(self._update_anki_state)
@@ -485,6 +490,113 @@ class SettingsDialog(QDialog):
             setattr(config, key, color.name())
             self._update_color_buttons()
             self._mark_as_custom()
+
+    def _import_yomitan_settings(self):
+        """Loads Yomitan exported settings JSON, parses it, and auto-fills fields with placeholder translation."""
+        import json
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Yomitan Settings Backup",
+            "",
+            "JSON Backup Files (*.json);;All Files (*)"
+        )
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                backup_data = json.load(f)
+
+            # Yomitan nests settings under an 'options' root key
+            options = backup_data.get('options', backup_data)
+            anki_opt = options.get('anki', {})
+            terms_opt = anki_opt.get('terms', {})
+
+            enabled = anki_opt.get('enable', True)
+            server_url = anki_opt.get('server', 'http://127.0.0.1:8765')
+            deck_name = terms_opt.get('deck', '')
+            model_name = terms_opt.get('model', '')
+            tags_list = terms_opt.get('tags', [])
+            check_dupes = terms_opt.get('checkDuplicates', True)
+
+            # Yomichan/Yomitan fields are stored as: [["FieldName", "{expression}"], ...]
+            raw_fields = terms_opt.get('fields', [])
+
+            # Translation map from Yomichan/Yomitan variables to meikipop-supported variables
+            translation_map = {
+                "{expression}": "{expression}",
+                "{kanji}": "{expression}",
+                "{reading}": "{reading}",
+                "{furigana}": "{reading}",
+                "{furigana-plain}": "{reading}",
+                "{sentence}": "{sentence}",
+                "{sentence_cloze}": "{sentence_cloze}",
+                "{freq}": "{frequency}",
+                "{frequency}": "{frequency}",
+                "{part-of-speech}": "{part_of_speech}",
+                "{audio}": "",  # Clear active media tags since meikipop downloads audio independently
+                "{pitch-accent-graphs}": "",  # Avoid putting raw text variables on cards
+                "{pitch-accent-positions}": "",
+            }
+
+            def translate_val(val):
+                if not isinstance(val, str):
+                    return val
+                
+                # Check exact matches
+                if val in translation_map:
+                    return translation_map[val]
+                
+                # Cloze sentence parsing
+                if "{cloze-prefix}" in val:
+                    return "{sentence_cloze}"
+                
+                # Glossary/Definition parsing
+                val_lower = val.lower()
+                if "glossary" in val_lower or "definition" in val_lower:
+                    return "{glossary_full}"
+                
+                return val
+
+            mapping_dict = {}
+            for item in raw_fields:
+                if isinstance(item, list) and len(item) == 2:
+                    field_name = item[0]
+                    placeholder = item[1]
+                    mapping_dict[field_name] = translate_val(placeholder)
+                elif isinstance(item, dict):
+                    for k, v in item.items():
+                        mapping_dict[k] = translate_val(v)
+
+            # Auto-populate UI fields
+            self.anki_enabled_check.setChecked(enabled)
+            self.anki_url_input.setText(server_url)
+            self.anki_deck_input.setText(deck_name)
+            self.anki_model_input.setText(model_name)
+            self.anki_mapping_input.setText(json.dumps(mapping_dict))
+
+            if tags_list and isinstance(tags_list, list):
+                self.anki_tag_input.setText(" ".join(tags_list))
+            else:
+                self.anki_tag_input.setText("")
+
+            self.anki_check_dup_check.setChecked(check_dupes)
+
+            # Trigger enabled/disabled gray-out update
+            self._update_anki_state(enabled)
+
+            QMessageBox.information(
+                self,
+                "Import Complete",
+                "Yomitan configuration imported successfully!\nUnsupported placeholders were safely translated."
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Import Error",
+                f"Failed to parse Yomitan settings backup:\n{str(e)}"
+            )
 
     def save_and_accept(self):
         # Update OCR Provider
