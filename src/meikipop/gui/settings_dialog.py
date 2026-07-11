@@ -611,7 +611,7 @@ class SettingsDialog(QDialog):
                 "{furigana}": "{reading}",
                 "{furigana-plain}": "{reading}",
                 "{sentence}": "{sentence}",
-                "{sentence_cloze}": "{sentence_cloze}",
+                "{sentence_cloze}": "{sentence}",  # Map cloze sentence to local meikipop {sentence}
                 "{freq}": "{frequency}",
                 "{frequency}": "{frequency}",
                 "{part-of-speech}": "{part_of_speech}",
@@ -627,14 +627,14 @@ class SettingsDialog(QDialog):
                 if val in translation_map:
                     return translation_map[val]
 
-                # Cloze sentence parsing
+                # Cloze sentence parsing -> map to local meikipop {sentence}
                 if "{cloze-prefix}" in val:
-                    return "{sentence_cloze}"
+                    return "{sentence}"
 
-                # Glossary/Definition parsing
+                # Glossary/Definition parsing -> map to local meikipop {glossary}
                 val_lower = val.lower()
                 if "glossary" in val_lower or "definition" in val_lower:
-                    return "{glossary_full}"
+                    return "{glossary}"
 
                 return val
 

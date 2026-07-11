@@ -47,6 +47,10 @@ class Popup(QWidget):
         self.is_pinned = False  # True while the mouse is hovering the popup itself
         self._entry_widgets = []  # currently-built per-entry row widgets, kept so we can tear them down
 
+        # --- TOGGLE LOGIC STATES ---
+        self.toggle_active = False
+        self._hotkey_was_active_last_tick = False
+
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.process_latest_data_loop)
         self.timer.start(10)
@@ -196,11 +200,17 @@ class Popup(QWidget):
 
     def set_latest_data(self, data):
         with self._data_lock:
+            # If the user is currently hovering the popup, ignore updates
             if self.is_pinned:
-                # Freeze content while hovered: the OCR/hit-scan loop won't find anything
-                # under the mouse once it's over the popup itself, so ignore updates until
-                # the user moves off again.
                 return
+                
+            # If the popup is locked on via toggle:
+            if self.toggle_active:
+                # If we already have a searched word locked in, ignore any new updates
+                # (preventing other words from overwriting it as the mouse travels)
+                if self._latest_data:
+                    return
+            
             self._latest_data = data
 
     def get_latest_data(self):
@@ -220,29 +230,34 @@ class Popup(QWidget):
         data_present = bool(self._latest_data)
         hotkey_active = self.input_loop.is_virtual_hotkey_down()
 
-        # Check if the mouse is close enough to the popup frame.
-        # This keeps the window open during the gap between hotkey release and pinning.
-        mouse_near_popup = False
-        if self.is_visible and data_present:
-            cursor_pos = QCursor.pos()
-            window_rect = self.geometry()
-            # 150px padding gives you a safe travel bridge from cursor to the popup
-            padding = 150
-            padded_rect = window_rect.adjusted(-padding, -padding, padding, padding)
-            if padded_rect.contains(cursor_pos):
-                mouse_near_popup = True
+        # --- TOGGLE FUNCTIONALITY ---
+        # Detect the moment the hotkey is first tapped (rising edge)
+        if hotkey_active and not self._hotkey_was_active_last_tick:
+            if self.is_visible:
+                # If popup is visible, press hotkey to toggle it OFF
+                self.toggle_active = False
+                self.hide_popup()
+            else:
+                # If popup is hidden, press hotkey to toggle it ON and lock position
+                self.toggle_active = True
+                mouse_pos = QCursor.pos()
+                self.move_to(mouse_pos.x(), mouse_pos.y())
+                
+        self._hotkey_was_active_last_tick = hotkey_active
 
-        # Keep popup visible if pinned, hotkey active, or cursor is in the near padding area
-        should_show = data_present and config.is_enabled and (self.is_pinned or hotkey_active or mouse_near_popup)
+        # Keep popup visible if pinned, hotkey active, or locked on via toggle
+        should_show = data_present and config.is_enabled and (
+            self.is_pinned or hotkey_active or self.toggle_active
+        )
 
         if should_show:
             self.show_popup()
         else:
             self.hide_popup()
 
-        # Follow the cursor ONLY when hotkey is down (or auto scan is running).
-        # When hotkey is released, freeze position so the user can move their cursor to click.
-        if not self.is_pinned:
+        # Follow cursor only if we are not hovering over the popup and we are NOT locked on via toggle.
+        # This allows you to safely move your cursor onto the stationary frozen popup!
+        if not self.is_pinned and not self.toggle_active:
             if hotkey_active:
                 mouse_pos = QCursor.pos()
                 self.move_to(mouse_pos.x(), mouse_pos.y())
@@ -539,7 +554,7 @@ class Popup(QWidget):
         elif status == "dup":
             button.setText("=")
             button.setToolTip("Already in Anki")
-            button.setEnabled(True)  # allow retry/force-add via a second click if they really want to
+            button.setEnabled(True)
         else:
             button.setText("!")
             button.setToolTip(f"Mining failed: {message}")
@@ -621,6 +636,13 @@ class Popup(QWidget):
             return
         self.hide()
         self.is_visible = False
+        self.toggle_active = False  # Reset toggle when manually hiding
+        
+        # Reset the latest data to None when the popup is fully dismissed,
+        # so that a fresh scan can be triggered later.
+        with self._data_lock:
+            self._latest_data = None
+            
         QTimer.singleShot(50, lambda: self._release_lock_safely())
         self._restore_focus_on_mac()
 
